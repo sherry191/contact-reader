@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>vCard Reader</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+
+    #drop-zone {
+      width: 100%;
+      max-width: 520px;
+      border: 2px dashed #bbb;
+      border-radius: 12px;
+      background: #fff;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    #drop-zone.dragover {
+      border-color: #4a6cf7;
+      background: #f0f3ff;
+    }
+
+    #drop-zone svg {
+      margin-bottom: 12px;
+      color: #aaa;
+    }
+
+    #drop-zone p {
+      color: #555;
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+    }
+
+    #drop-zone .hint {
+      font-size: 0.8rem;
+      color: #999;
+      margin-top: 8px;
+      margin-bottom: 0;
+    }
+
+    #file-input { display: none; }
+
+    .btn {
+      display: inline-block;
+      padding: 8px 20px;
+      background: #4a6cf7;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s;
+    }
+
+    .btn:hover { background: #3a5ce6; }
+
+    #results {
+      width: 100%;
+      max-width: 520px;
+      margin-top: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .contact-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      position: relative;
+    }
+
+    .contact-card h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      padding-right: 80px;
+    }
+
+    .contact-card table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    .contact-card td {
+      padding: 3px 0;
+      vertical-align: top;
+    }
+
+    .contact-card td:first-child {
+      color: #888;
+      width: 90px;
+      flex-shrink: 0;
+      padding-right: 12px;
+    }
+
+    .contact-card td:last-child {
+      color: #222;
+      word-break: break-word;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      padding: 4px 12px;
+      background: #f0f0f0;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      color: #555;
+      transition: background 0.15s;
+    }
+
+    .copy-btn:hover { background: #e0e0e0; }
+    .copy-btn.copied { background: #d4edda; color: #276a35; }
+
+    #copy-all-wrap {
+      width: 100%;
+      max-width: 520px;
+      margin-top: 8px;
+      text-align: right;
+    }
+
+    #copy-all {
+      padding: 6px 16px;
+      background: #eef1ff;
+      border: 1px solid #c5ceff;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      color: #4a6cf7;
+      transition: background 0.15s;
+    }
+
+    #copy-all:hover { background: #dce2ff; }
+    #copy-all.copied { background: #d4edda; border-color: #9dd5ac; color: #276a35; }
+
+    .error {
+      color: #c0392b;
+      font-size: 0.85rem;
+      padding: 10px 14px;
+      background: #fdecea;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>vCard Reader</h1>
+  <p class="subtitle">Upload one or more .vcf files to extract contact info as plain text.</p>
+
+  <div id="drop-zone">
+    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" fill="none"
+         stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M12 16V4m0 0L8 8m4-4 4 4M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1"/>
+    </svg>
+    <p>Drag &amp; drop your .vcf file(s) here</p>
+    <label class="btn" for="file-input">Browse files</label>
+    <input type="file" id="file-input" accept=".vcf,text/vcard" multiple />
+    <p class="hint">Supports multiple contacts per file</p>
+  </div>
+
+  <div id="copy-all-wrap" style="display:none">
+    <button id="copy-all">Copy all as plain text</button>
+  </div>
+
+  <div id="results"></div>
+
+<script>
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const results = document.getElementById('results');
+  const copyAllWrap = document.getElementById('copy-all-wrap');
+  const copyAllBtn = document.getElementById('copy-all');
+
+  // Drag & drop events
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    handleFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', () => handleFiles([...fileInput.files]));
+
+  function handleFiles(files) {
+    results.innerHTML = '';
+    copyAllWrap.style.display = 'none';
+    const vcfFiles = files.filter(f => f.name.endsWith('.vcf') || f.type === 'text/vcard');
+    if (!vcfFiles.length) {
+      results.innerHTML = '<div class="error">No .vcf files found. Please upload vCard files.</div>';
+      return;
+    }
+    let pending = vcfFiles.length;
+    let allText = [];
+    vcfFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const contacts = parseVCF(e.target.result);
+        contacts.forEach(c => {
+          const card = renderCard(c);
+          results.appendChild(card.el);
+          allText.push(card.text);
+        });
+        pending--;
+        if (pending === 0 && allText.length > 1) {
+          copyAllWrap.style.display = 'block';
+          copyAllBtn.onclick = () => copyText(allText.join('\n\n---\n\n'), copyAllBtn);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  function parseVCF(raw) {
+    // Unfold long lines (RFC 6350: line folding with \r\n + space/tab)
+    raw = raw.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+
+    const contacts = [];
+    const blocks = raw.split(/BEGIN:VCARD/i).filter(b => b.trim());
+
+    blocks.forEach(block => {
+      const lines = block.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const contact = {};
+
+      lines.forEach(line => {
+        if (/^END:VCARD/i.test(line)) return;
+
+        // Split on first colon, but property may have params (e.g. TEL;TYPE=CELL:...)
+        const colonIdx = line.indexOf(':');
+        if (colonIdx === -1) return;
+
+        const propFull = line.substring(0, colonIdx).toUpperCase();
+        const value = line.substring(colonIdx + 1).trim();
+        if (!value) return;
+
+        const propName = propFull.split(';')[0];
+        const params = propFull.split(';').slice(1).join(';');
+
+        switch (propName) {
+          case 'FN':
+            contact.name = value;
+            break;
+          case 'N':
+            if (!contact.name) {
+              // N:Last;First;Middle;Prefix;Suffix
+              const parts = value.split(';');
+              const full = [parts[3], parts[1], parts[2], parts[0], parts[4]]
+                .filter(Boolean).join(' ');
+              if (full) contact.name = full;
+            }
+            break;
+          case 'ORG':
+            contact.org = value.replace(/;/g, ' ').trim();
+            break;
+          case 'TITLE':
+            contact.title = value;
+            break;
+          case 'EMAIL':
+            if (!contact.emails) contact.emails = [];
+            contact.emails.push(value);
+            break;
+          case 'TEL':
+            if (!contact.phones) contact.phones = [];
+            // Label by type if present
+            const typeMatch = params.match(/TYPE=([^;]+)/i);
+            const label = typeMatch ? capitalize(typeMatch[1].replace(/,.*/, '')) : '';
+            contact.phones.push({ label, number: value });
+            break;
+          case 'ADR': {
+            // ADR:PO Box;Extended;Street;City;State;ZIP;Country
+            const a = value.split(';');
+            const street = [a[0], a[1], a[2]].filter(Boolean).join(', ');
+            const cityLine = [a[3], a[4]].filter(Boolean).join(', ');
+            const zip = a[5] || '';
+            const country = a[6] || '';
+            const addr = [street, cityLine, zip, country].filter(Boolean).join(' ').trim();
+            if (addr) contact.address = addr;
+            break;
+          }
+          case 'URL':
+            if (!contact.urls) contact.urls = [];
+            contact.urls.push(value);
+            break;
+          case 'NOTE':
+            contact.note = value.replace(/\\n/g, '\n');
+            break;
+          case 'BDAY':
+            contact.birthday = formatDate(value);
+            break;
+        }
+      });
+
+      if (contact.name || contact.emails || contact.phones) {
+        contacts.push(contact);
+      }
+    });
+
+    return contacts;
+  }
+
+  function renderCard(c) {
+    const rows = [];
+    const textLines = [];
+
+    if (c.name)  { rows.push(['Name', c.name]); textLines.push('Name:     ' + c.name); }
+    if (c.title) { rows.push(['Title', c.title]); textLines.push('Title:    ' + c.title); }
+    if (c.org)   { rows.push(['Company', c.org]); textLines.push('Company:  ' + c.org); }
+
+    if (c.emails) {
+      c.emails.forEach((e, i) => {
+        rows.push([i === 0 ? 'Email' : '', e]);
+        textLines.push((i === 0 ? 'Email:    ' : '          ') + e);
+      });
+    }
+
+    if (c.phones) {
+      c.phones.forEach((p, i) => {
+        const label = p.label ? `Phone (${p.label})` : 'Phone';
+        rows.push([i === 0 ? label : label, p.number]);
+        textLines.push(padLabel(label) + p.number);
+      });
+    }
+
+    if (c.address) { rows.push(['Address', c.address]); textLines.push('Address:  ' + c.address); }
+    if (c.urls)    { c.urls.forEach((u, i) => { rows.push([i === 0 ? 'Website' : ''], u); textLines.push('Website:  ' + u); }); }
+    if (c.birthday){ rows.push(['Birthday', c.birthday]); textLines.push('Birthday: ' + c.birthday); }
+    if (c.note)    { rows.push(['Note', c.note]); textLines.push('Note:     ' + c.note); }
+
+    const plainText = textLines.join('\n');
+
+    const el = document.createElement('div');
+    el.className = 'contact-card';
+    el.innerHTML = `
+      <h2>${escHtml(c.name || 'Unnamed Contact')}</h2>
+      <button class="copy-btn" title="Copy as plain text">Copy</button>
+      <table>${rows.map(([label, val]) =>
+        `<tr><td>${escHtml(label)}</td><td>${escHtml(val || '')}</td></tr>`
+      ).join('')}</table>
+    `;
+
+    el.querySelector('.copy-btn').addEventListener('click', function() {
+      copyText(plainText, this);
+    });
+
+    return { el, text: plainText };
+  }
+
+  function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
+    });
+  }
+
+  function padLabel(label) {
+    return (label + ':').padEnd(10);
+  }
+
+  function capitalize(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+  }
+
+  function formatDate(val) {
+    // YYYYMMDD or YYYY-MM-DD
+    const m = val.replace(/-/g, '').match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (!m) return val;
+    return `${m[2]}/${m[3]}/${m[1]}`;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
