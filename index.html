@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
   <title>vCard Reader</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -215,12 +217,30 @@
   });
   fileInput.addEventListener('change', () => handleFiles([...fileInput.files]));
 
+  const MAX_FILES = 20;
+  const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+
   function handleFiles(files) {
     results.innerHTML = '';
     copyAllWrap.style.display = 'none';
+
+    // Reject non-.vcf files
     const vcfFiles = files.filter(f => f.name.endsWith('.vcf') || f.type === 'text/vcard');
     if (!vcfFiles.length) {
       results.innerHTML = '<div class="error">No .vcf files found. Please upload vCard files.</div>';
+      return;
+    }
+
+    // Cap number of files
+    if (vcfFiles.length > MAX_FILES) {
+      results.innerHTML = `<div class="error">Too many files. Please upload ${MAX_FILES} or fewer at a time.</div>`;
+      return;
+    }
+
+    // Reject oversized files
+    const oversized = vcfFiles.filter(f => f.size > MAX_FILE_SIZE);
+    if (oversized.length) {
+      results.innerHTML = `<div class="error">File too large: ${escHtml(oversized[0].name)}. Max size is 1MB per file.</div>`;
       return;
     }
     let pending = vcfFiles.length;
@@ -355,7 +375,15 @@
     }
 
     if (c.address) { rows.push(['Address', c.address]); textLines.push('Address:  ' + c.address); }
-    if (c.urls)    { c.urls.forEach((u, i) => { rows.push([i === 0 ? 'Website' : ''], u); textLines.push('Website:  ' + u); }); }
+    if (c.urls) {
+      c.urls.forEach((u, i) => {
+        const safeUrl = sanitizeUrl(u);
+        if (safeUrl) {
+          rows.push([i === 0 ? 'Website' : '', safeUrl]); // fixed: url was outside array brackets before
+          textLines.push('Website:  ' + safeUrl);
+        }
+      });
+    }
     if (c.birthday){ rows.push(['Birthday', c.birthday]); textLines.push('Birthday: ' + c.birthday); }
     if (c.note)    { rows.push(['Note', c.note]); textLines.push('Note:     ' + c.note); }
 
@@ -400,6 +428,13 @@
     const m = val.replace(/-/g, '').match(/^(\d{4})(\d{2})(\d{2})$/);
     if (!m) return val;
     return `${m[2]}/${m[3]}/${m[1]}`;
+  }
+
+  function sanitizeUrl(url) {
+    // Block javascript: and data: protocols — both can execute code in a browser
+    const trimmed = url.trim().toLowerCase();
+    if (trimmed.startsWith('javascript:') || trimmed.startsWith('data:')) return null;
+    return url.trim();
   }
 
   function escHtml(str) {
